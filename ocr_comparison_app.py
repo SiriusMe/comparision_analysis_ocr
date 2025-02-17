@@ -1,0 +1,554 @@
+import streamlit as st
+# Set page config first
+st.set_page_config(page_title="OCR Comparison", layout="wide")
+
+import easyocr
+import pytesseract
+import numpy as np
+import cv2
+from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import io
+import os
+import warnings
+import fitz  # PyMuPDF for PDF
+import tempfile
+import pandas as pd
+import tensorflow as tf
+import keras_ocr
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
+
+# Set Tesseract path
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+# Suppress TF warnings
+tf.get_logger().setLevel('ERROR')
+
+def find_innermost_boundary(image):
+    """Find the innermost boundary rectangle that contains the main drawing"""
+    try:
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        # Apply Gaussian blur
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Apply adaptive thresholding
+        thresh = cv2.adaptiveThreshold(
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV, 11, 2
+        )
+
+        # Find contours with hierarchy
+        contours, hierarchy = cv2.findContours(
+            thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        height, width = image.shape[:2]
+        valid_rectangles = []
+
+        # Process each contour
+        for i, cnt in enumerate(contours):
+            x, y, w, h = cv2.boundingRect(cnt)
+            area = cv2.contourArea(cnt)
+            rect_area = w * h
+
+            # Filter valid rectangles
+            is_valid = (
+                w > width * 0.1 and h > height * 0.1 and
+                abs(area - rect_area) / rect_area < 0.4 and
+                x >= 0 and y >= 0
+            )
+
+            if is_valid:
+                valid_rectangles.append({
+                    'contour': cnt,
+                    'area': area,
+                    'rect': (x, y, w, h)
+                })
+
+        if not valid_rectangles:
+            return None, None, None
+
+        # Sort by area and get the second largest (usually the main drawing area)
+        valid_rectangles.sort(key=lambda x: x['area'], reverse=True)
+        main_rect = valid_rectangles[1]['rect'] if len(valid_rectangles) > 1 else valid_rectangles[0]['rect']
+        main_cnt = valid_rectangles[1]['contour'] if len(valid_rectangles) > 1 else valid_rectangles[0]['contour']
+
+        # Create mask
+        mask = np.zeros((height, width), dtype=np.uint8)
+        cv2.drawContours(mask, [main_cnt], -1, 255, -1)
+
+        # Draw contour on original image
+        image_with_contour = image.copy()
+        cv2.drawContours(image_with_contour, [main_cnt], -1, (0, 255, 0), 2)
+
+        return mask, main_rect, image_with_contour
+
+    except Exception as e:
+        st.error(f"Error in boundary detection: {str(e)}")
+        return None, None, None
+
+def convert_pdf_to_image(pdf_file):
+    """Convert PDF to image"""
+    try:
+        # Read PDF file
+        pdf_document = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        
+        # Get first page
+        page = pdf_document[0]
+        
+        # Convert to image with higher resolution
+        pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+        img_data = pix.tobytes("png")
+        
+        # Convert to numpy array
+        nparr = np.frombuffer(img_data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        return img
+    except Exception as e:
+        st.error(f"Error converting PDF: {str(e)}")
+        return None
+
+def convert_dxf_to_image(dxf_file):
+    """Convert DXF to image"""
+    st.error("DXF support not available. Please install ezdxf package.")
+    return None
+
+@st.cache_resource
+def load_models():
+    """Load all OCR models with caching"""
+    try:
+        easyocr_reader = easyocr.Reader(['en'])
+        keras_pipeline = keras_ocr.pipeline.Pipeline()
+        return easyocr_reader, keras_pipeline
+    except Exception as e:
+        st.error(f"Failed to load models: {str(e)}")
+        return None, None
+
+def preprocess_image(image):
+    """Preprocess image for better OCR results"""
+    try:
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Apply CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        
+        # Denoise
+        denoised = cv2.fastNlMeansDenoising(enhanced, h=10)
+        
+        return denoised
+    except Exception as e:
+        st.error(f"Error in preprocessing: {str(e)}")
+        return None
+
+def process_with_easyocr(image, reader):
+    """Process image with EasyOCR"""
+    try:
+        if reader is None:
+            return None
+            
+        # Process original orientation for horizontal text
+        all_results = reader.readtext(image)
+        
+        # Filter for confidence >= 0.7 (70%) and horizontal text
+        horizontal_results = []
+        for box, text, conf in all_results:
+            if conf >= 0.6:  # Check confidence threshold
+                # Calculate if text is horizontal based on box dimensions
+                x_coords = [p[0] for p in box]
+                y_coords = [p[1] for p in box]
+                width = max(x_coords) - min(x_coords)
+                height = max(y_coords) - min(y_coords)
+                
+                # Only include horizontal text (width > height)
+                if height <= width * 1.5:
+                    horizontal_results.append([box, text, conf])
+        
+        return horizontal_results
+    except Exception as e:
+        st.error(f"Error in EasyOCR processing: {str(e)}")
+        return None
+
+def process_with_tesseract(image):
+    """Process image with Tesseract"""
+    try:
+        # Preprocess image
+        preprocessed = preprocess_image(image)
+        if preprocessed is None:
+            return None
+        
+        # Get results for horizontal text
+        data = pytesseract.image_to_data(preprocessed, output_type=pytesseract.Output.DICT)
+        
+        # Filter data for confidence >= 70 and horizontal text
+        filtered_data = {k: [] for k in data.keys()}
+        
+        for i in range(len(data['text'])):
+            if (int(data['conf'][i]) >= 70 and 
+                data['text'][i].strip() and
+                data['width'][i] > data['height'][i]):  # Only horizontal text
+                
+                # Add to filtered data
+                for key in data.keys():
+                    filtered_data[key].append(data[key][i])
+        
+        return filtered_data
+    except Exception as e:
+        st.error(f"Error in Tesseract processing: {str(e)}")
+        return None
+
+def process_with_keras_ocr(image, pipeline):
+    """Process image with Keras OCR"""
+    try:
+        if pipeline is None:
+            return None
+            
+        # Convert image to RGB (Keras OCR requirement)
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+        # Get predictions
+        predictions = pipeline.recognize([rgb_image])[0]
+        
+        # Format results to match EasyOCR format
+        results = []
+        for text, box in predictions:
+            # Calculate if text is horizontal
+            x_coords = [p[0] for p in box]
+            y_coords = [p[1] for p in box]
+            width = max(x_coords) - min(x_coords)
+            height = max(y_coords) - min(y_coords)
+            
+            # Only include horizontal text
+            if height <= width * 1.5:
+                # Use 1.0 as confidence since Keras OCR doesn't provide confidence scores
+                results.append([box, text, 1.0])
+        
+        return results
+    except Exception as e:
+        st.error(f"Error in Keras OCR processing: {str(e)}")
+        return None
+
+def draw_results(image, results, method, boundary_image=None):
+    """Draw detection results on image"""
+    try:
+        if results is None:
+            return None
+            
+        # Create figure with two subplots if boundary image exists
+        if boundary_image is not None:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
+            ax2.imshow(cv2.cvtColor(boundary_image, cv2.COLOR_BGR2RGB))
+            ax2.set_title("Detected Drawing Boundary")
+            ax2.axis('off')
+        else:
+            fig, ax1 = plt.subplots(figsize=(10, 10))
+            
+        ax1.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        
+        if method in ["EasyOCR", "Keras OCR"]:
+            # Draw horizontal detections in green
+            for detection in results:
+                box = detection[0]
+                text = detection[1]
+                conf = detection[2]
+                
+                bbox = patches.Polygon(box, linewidth=1, edgecolor='green', facecolor='none')
+                ax1.add_patch(bbox)
+                ax1.text(box[0][0], box[0][1], 
+                        f"{text} ({conf:.2f})" if method == "EasyOCR" else text, 
+                        color='green', fontsize=6)
+        
+        elif method == "Tesseract":
+            # Draw horizontal detections in green
+            if len(results['text']) > 0:  # Check if there are any results
+                for i in range(len(results['text'])):
+                    if results['text'][i].strip():  # Only process non-empty text
+                        x = results['left'][i]
+                        y = results['top'][i]
+                        w = results['width'][i]
+                        h = results['height'][i]
+                        text = results['text'][i]
+                        conf = results['conf'][i]
+                        
+                        rect = patches.Rectangle((x, y), w, h, linewidth=1, 
+                                              edgecolor='green', facecolor='none')
+                        ax1.add_patch(rect)
+                        ax1.text(x, y, f"{text} ({conf})", color='green', fontsize=6)
+        
+        ax1.set_title("OCR Results")
+        ax1.axis('off')
+        return fig
+    except Exception as e:
+        st.error(f"Error drawing results: {str(e)}")
+        return None
+
+def calculate_statistics(results, method):
+    """Calculate detection statistics"""
+    try:
+        if method == "EasyOCR":
+            total_detections = len(results)
+            avg_confidence = np.mean([det[2] for det in results]) if results else 0
+            
+            # Group by confidence ranges
+            high_conf = len([det for det in results if det[2] >= 0.8])
+            med_conf = len([det for det in results if 0.7 <= det[2] < 0.8])
+            low_conf = len([det for det in results if 0.6 <= det[2] < 0.7])
+            
+            stats = {
+                "Total Detections": total_detections,
+                "Average Confidence": f"{avg_confidence:.2%}",
+                "High Confidence (≥80%)": high_conf,
+                "Medium Confidence (70-79%)": med_conf,
+                "Low Confidence (60-69%)": low_conf
+            }
+            
+        elif method == "Tesseract":
+            total_detections = len(results['text'])
+            confidences = [conf for conf in results['conf'] if conf != -1]
+            avg_confidence = np.mean(confidences) if confidences else 0
+            
+            # Group by confidence ranges
+            high_conf = len([conf for conf in confidences if conf >= 80])
+            med_conf = len([conf for conf in confidences if 70 <= conf < 80])
+            low_conf = len([conf for conf in confidences if 60 <= conf < 70])
+            
+            stats = {
+                "Total Detections": total_detections,
+                "Average Confidence": f"{avg_confidence:.2f}%",
+                "High Confidence (≥80%)": high_conf,
+                "Medium Confidence (70-79%)": med_conf,
+                "Low Confidence (60-69%)": low_conf
+            }
+            
+        elif method == "Keras OCR":
+            total_detections = len(results)
+            avg_confidence = np.mean([conf for conf in results[2]]) if results else 0
+            
+            stats = {
+                "Total Detections": total_detections,
+                "Average Confidence": f"{avg_confidence:.2%}"
+            }
+            
+        return stats
+    except Exception as e:
+        st.error(f"Error calculating statistics: {str(e)}")
+        return None
+
+def display_statistics(stats):
+    """Display detection statistics in a formatted way"""
+    if stats:
+        st.subheader("📊 Detection Statistics")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("🔢 Total Detections", stats["Total Detections"])
+            st.metric("Average Confidence", stats["Average Confidence"])
+        
+        with col2:
+            st.metric("High Confidence (≥80%)", stats["High Confidence (≥80%)"])
+            st.metric("Medium Confidence (70-79%)", stats["Medium Confidence (70-79%)"])
+            st.metric("Low Confidence (60-69%)", stats["Low Confidence (60-69%)"])
+
+def display_detections(results, method):
+    """Display all detections in a table format"""
+    if not results:
+        return
+    
+    st.subheader("📋 All Detections")
+    
+    if method == "EasyOCR":
+        # Create DataFrame for EasyOCR results
+        data = {
+            "Text": [det[1] for det in results],
+            "Confidence": [f"{det[2]:.2%}" for det in results],
+            "Position": [f"({int(det[0][0][0])}, {int(det[0][0][1])})" for det in results]
+        }
+        df = pd.DataFrame(data)
+        df.index = range(1, len(df) + 1)  # 1-based indexing
+        
+    elif method == "Tesseract":
+        # Create DataFrame for Tesseract results
+        data = {
+            "Text": results['text'],
+            "Confidence": [f"{conf}%" for conf in results['conf']],
+            "Position": [f"({left}, {top})" for left, top in zip(results['left'], results['top'])]
+        }
+        df = pd.DataFrame(data)
+        df.index = range(1, len(df) + 1)  # 1-based indexing
+    
+    elif method == "Keras OCR":
+        # Create DataFrame for Keras OCR results
+        data = {
+            "Text": [det[1] for det in results],
+            "Position": [f"({int(det[0][0][0])}, {int(det[0][0][1])})" for det in results]
+        }
+        df = pd.DataFrame(data)
+        df.index = range(1, len(df) + 1)  # 1-based indexing
+    
+    # Display DataFrame with enhanced styling
+    st.dataframe(
+        df.style.set_properties(**{
+            'background-color': '#f0f2f6',
+            'color': '#1f1f1f',
+            'border-color': '#ffffff',
+            'font-size': '16px',
+            'padding': '10px',
+            'text-align': 'left'
+        }).set_table_styles([
+            {'selector': 'th',
+             'props': [('background-color', '#0e1117'),
+                      ('color', '#ffffff'),
+                      ('font-weight', 'bold'),
+                      ('font-size', '16px'),
+                      ('padding', '10px')]},
+            {'selector': 'tr:hover',
+             'props': [('background-color', '#e6e9ef')]},
+        ]),
+        use_container_width=True,  # Make table full width
+        height=400  # Set fixed height with scrolling
+    )
+
+def main():
+    st.title("📝 OCR Methods Comparison")
+    st.write("Compare text detection results from EasyOCR, Tesseract, and Keras OCR")
+    
+    # Load models at startup
+    with st.spinner('Loading OCR models...'):
+        easyocr_reader, keras_pipeline = load_models()
+    
+    # File uploader with supported file types
+    uploaded_file = st.file_uploader(
+        "Choose a file...", 
+        type=["jpg", "jpeg", "png", "pdf"]
+    )
+    
+    if uploaded_file is not None:
+        try:
+            # Convert file to image based on type
+            file_type = uploaded_file.name.split('.')[-1].lower()
+            
+            if file_type == 'pdf':
+                image = convert_pdf_to_image(uploaded_file)
+            else:
+                # Read image file directly
+                file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+                image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            
+            if image is None:
+                st.error("Failed to load file. Please try another file.")
+                return
+            
+            # Detect drawing boundary
+            mask, boundary_rect, boundary_image = find_innermost_boundary(image)
+            
+            if mask is not None:
+                # Apply mask to image
+                masked_image = cv2.bitwise_and(image, image, mask=mask)
+            else:
+                masked_image = image
+                
+            # Create tabs for different methods with custom styling
+            custom_tab_style = """
+                <style>
+                .stTabs [data-baseweb="tab-list"] {
+                    gap: 20px;
+                }
+                .stTabs [data-baseweb="tab"] {
+                    padding: 10px 20px;
+                    font-size: 18px;
+                    font-weight: 500;
+                }
+                .stTabs [data-baseweb="tab-list"] button {
+                    border-radius: 5px;
+                    background-color: #f0f2f6;
+                }
+                .stTabs [data-baseweb="tab-list"] button:hover {
+                    background-color: #e6e9ef;
+                }
+                .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
+                    background-color: #0e1117;
+                    color: #ffffff;
+                }
+                </style>
+            """
+            st.markdown(custom_tab_style, unsafe_allow_html=True)
+            
+            tab1, tab2, tab3 = st.tabs(["🔍 EasyOCR", "🎯 Tesseract", "🤖 Keras OCR"])
+            
+            # Process with EasyOCR
+            with tab1:
+                with st.spinner('Processing with EasyOCR...'):
+                    easyocr_results = process_with_easyocr(masked_image, easyocr_reader)
+                    fig = draw_results(masked_image, easyocr_results, "EasyOCR", boundary_image)
+                    if fig:
+                        st.pyplot(fig)
+                    if easyocr_results:
+                        stats = calculate_statistics(easyocr_results, "EasyOCR")
+                        display_statistics(stats)
+                        display_detections(easyocr_results, "EasyOCR")
+            
+            # Process with Tesseract
+            with tab2:
+                with st.spinner('Processing with Tesseract...'):
+                    tesseract_results = process_with_tesseract(masked_image)
+                    fig = draw_results(masked_image, tesseract_results, "Tesseract", boundary_image)
+                    if fig:
+                        st.pyplot(fig)
+                    if tesseract_results:
+                        stats = calculate_statistics(tesseract_results, "Tesseract")
+                        display_statistics(stats)
+                        display_detections(tesseract_results, "Tesseract")
+            
+            # Process with Keras OCR
+            with tab3:
+                with st.spinner('Processing with Keras OCR...'):
+                    keras_results = process_with_keras_ocr(masked_image, keras_pipeline)
+                    fig = draw_results(masked_image, keras_results, "Keras OCR", boundary_image)
+                    if fig:
+                        st.pyplot(fig)
+                    if keras_results:
+                        # Since Keras OCR doesn't provide confidence scores, we'll show simpler stats
+                        st.subheader("📊 Detection Statistics")
+                        st.metric("🔢 Total Detections", len(keras_results))
+                        # Display detections
+                        st.subheader("📋 All Detections")
+                        data = {
+                            "Text": [det[1] for det in keras_results],
+                            "Position": [f"({int(det[0][0][0])}, {int(det[0][0][1])})" for det in keras_results]
+                        }
+                        df = pd.DataFrame(data)
+                        df.index = range(1, len(df) + 1)
+                        st.dataframe(
+                            df.style.set_properties(**{
+                                'background-color': '#f0f2f6',
+                                'color': '#1f1f1f',
+                                'border-color': '#ffffff',
+                                'font-size': '16px',
+                                'padding': '10px',
+                                'text-align': 'left'
+                            }).set_table_styles([
+                                {'selector': 'th',
+                                 'props': [('background-color', '#0e1117'),
+                                          ('color', '#ffffff'),
+                                          ('font-weight', 'bold'),
+                                          ('font-size', '16px'),
+                                          ('padding', '10px')]},
+                                {'selector': 'tr:hover',
+                                 'props': [('background-color', '#e6e9ef')]},
+                            ]),
+                            use_container_width=True,
+                            height=400
+                        )
+                        
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+
+if __name__ == "__main__":
+    main() 
