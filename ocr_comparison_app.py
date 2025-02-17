@@ -22,7 +22,7 @@ import keras_ocr
 warnings.filterwarnings('ignore')
 
 # Set Tesseract path
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+pytesseract.pytesseract.tesseract_cmd = 'tesseract.exe'
 
 # Suppress TF warnings
 tf.get_logger().setLevel('ERROR')
