@@ -32,7 +32,7 @@ imgaug==0.4.0
 Jinja2==3.1.5
 jsonschema==4.23.0
 jsonschema-specifications==2024.10.1
-keras==2.15.0
+keras==2.14.0
 Keras-Applications==1.0.8
 keras-ocr==0.8.7
 kiwisolver==1.4.8
@@ -86,9 +86,9 @@ sympy==1.13.1
 tenacity==9.0.0
 tensorboard==2.15.2
 tensorboard-data-server==0.7.2
-tensorflow==2.15.0
-tensorflow-estimator==2.15.0
-tensorflow-intel==2.15.0
+tensorflow==2.14.0
+tensorflow-estimator==2.14.0
+tensorflow-intel==2.14.0
 tensorflow-io-gcs-filesystem==0.31.0
 termcolor==2.5.0
 tifffile==2025.1.10
