@@ -292,6 +292,9 @@ def process_with_easyocr(image, reader):
         if reader is None:
             return None
             
+        # Store original image for visualization
+        original_image = image.copy()
+            
         # Resize image if too large
         max_dimension = 2000  # Maximum dimension threshold
         height, width = image.shape[:2]
@@ -300,15 +303,18 @@ def process_with_easyocr(image, reader):
             new_width = int(width * scale)
             new_height = int(height * scale)
             image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+            original_image = cv2.resize(original_image, (new_width, new_height), interpolation=cv2.INTER_AREA)
             logger.info(f"Resized image from {width}x{height} to {new_width}x{new_height}")
         
-        # Convert to grayscale to reduce memory usage
+        # Convert to grayscale for OCR processing
         if len(image.shape) == 3:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray_image = image
         
         # Split image into chunks if it's large
         chunk_size = 1000  # Size of each chunk
-        height, width = image.shape[:2]
+        height, width = gray_image.shape[:2]
         
         all_results = []
         
@@ -317,7 +323,7 @@ def process_with_easyocr(image, reader):
             for y in range(0, height, chunk_size):
                 for x in range(0, width, chunk_size):
                     # Extract chunk
-                    chunk = image[y:min(y+chunk_size, height), x:min(x+chunk_size, width)]
+                    chunk = gray_image[y:min(y+chunk_size, height), x:min(x+chunk_size, width)]
                     
                     # Process chunk with progress indicator
                     with st.spinner(f'Processing region {x}:{x+chunk_size}, {y}:{y+chunk_size}...'):
@@ -329,12 +335,11 @@ def process_with_easyocr(image, reader):
                             all_results.append([adjusted_box, text, conf])
                     
                     # Force garbage collection after each chunk
-                    import gc
                     gc.collect()
         else:
             # Process small image directly
             with st.spinner('Processing image...'):
-                all_results = reader.readtext(image)
+                all_results = reader.readtext(gray_image)
         
         # Filter for confidence >= 0.6 (60%) and horizontal text
         horizontal_results = []
@@ -355,12 +360,14 @@ def process_with_easyocr(image, reader):
                 st.write(f"Found {len(horizontal_results)} text regions...")
         
         logger.info(f"Total text regions found: {len(horizontal_results)}")
-        return horizontal_results
+        
+        # Return results along with the original color image for visualization
+        return horizontal_results, original_image
         
     except Exception as e:
         logger.error(f"Error in EasyOCR processing: {str(e)}", exc_info=True)
         st.error(f"Error in EasyOCR processing: {str(e)}")
-        return None
+        return None, None
 
 def process_with_tesseract(image):
     """Process image with Tesseract"""
@@ -427,16 +434,38 @@ def draw_results(image, results, method, boundary_image=None):
         if results is None:
             return None
             
-        # Create figure with two subplots if boundary image exists
-        if boundary_image is not None:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
-            ax2.imshow(cv2.cvtColor(boundary_image, cv2.COLOR_BGR2RGB))
-            ax2.set_title("Detected Drawing Boundary")
-            ax2.axis('off')
-        else:
-            fig, ax1 = plt.subplots(figsize=(10, 10))
+        # Unpack results if it's from EasyOCR with modified return
+        if method == "EasyOCR" and isinstance(results, tuple):
+            results, _ = results  # Ignore the image from results, use the passed image
             
-        ax1.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        # Create figure with three subplots: original, boundary, and OCR results
+        fig = plt.figure(figsize=(20, 10))
+        
+        # Create grid for subplots
+        if boundary_image is not None:
+            gs = fig.add_gridspec(1, 3)
+            ax_orig = fig.add_subplot(gs[0, 0])  # Original image
+            ax_bound = fig.add_subplot(gs[0, 1])  # Boundary image
+            ax_ocr = fig.add_subplot(gs[0, 2])    # OCR results
+            
+            # Show boundary image
+            ax_bound.imshow(cv2.cvtColor(boundary_image, cv2.COLOR_BGR2RGB))
+            ax_bound.set_title("Detected Drawing Boundary")
+            ax_bound.axis('off')
+        else:
+            gs = fig.add_gridspec(1, 2)
+            ax_orig = fig.add_subplot(gs[0, 0])  # Original image
+            ax_ocr = fig.add_subplot(gs[0, 1])    # OCR results
+        
+        # Show original image
+        ax_orig.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        ax_orig.set_title("Original Image")
+        ax_orig.axis('off')
+        
+        # Show OCR results
+        ax_ocr.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        ax_ocr.set_title("OCR Results")
+        ax_ocr.axis('off')
         
         if method in ["EasyOCR", "Keras OCR"]:
             # Draw horizontal detections in green
@@ -445,11 +474,14 @@ def draw_results(image, results, method, boundary_image=None):
                 text = detection[1]
                 conf = detection[2]
                 
+                # Create polygon for bounding box
                 bbox = patches.Polygon(box, linewidth=1, edgecolor='green', facecolor='none')
-                ax1.add_patch(bbox)
-                ax1.text(box[0][0], box[0][1], 
+                ax_ocr.add_patch(bbox)
+                
+                # Add text with confidence
+                ax_ocr.text(box[0][0], box[0][1], 
                         f"{text} ({conf:.2f})" if method == "EasyOCR" else text, 
-                        color='green', fontsize=6)
+                        color='green', fontsize=6, bbox=dict(facecolor='white', alpha=0.7))
         
         elif method == "Tesseract":
             # Draw horizontal detections in green
@@ -465,11 +497,11 @@ def draw_results(image, results, method, boundary_image=None):
                         
                         rect = patches.Rectangle((x, y), w, h, linewidth=1, 
                                               edgecolor='green', facecolor='none')
-                        ax1.add_patch(rect)
-                        ax1.text(x, y, f"{text} ({conf})", color='green', fontsize=6)
+                        ax_ocr.add_patch(rect)
+                        ax_ocr.text(x, y, f"{text} ({conf})", color='green', fontsize=6,
+                                  bbox=dict(facecolor='white', alpha=0.7))
         
-        ax1.set_title("OCR Results")
-        ax1.axis('off')
+        plt.tight_layout()
         return fig
     except Exception as e:
         st.error(f"Error drawing results: {str(e)}")
@@ -680,8 +712,8 @@ def main():
             if easyocr_available:
                 with tabs[tab_index]:
                     with st.spinner('Processing with EasyOCR...'):
-                        easyocr_results = process_with_easyocr(masked_image, models['easyocr'])
-                        fig = draw_results(masked_image, easyocr_results, "EasyOCR", boundary_image)
+                        easyocr_results, processed_image = process_with_easyocr(masked_image, models['easyocr'])
+                        fig = draw_results(processed_image, easyocr_results, "EasyOCR", boundary_image)
                         if fig:
                             st.pyplot(fig)
                         if easyocr_results:
