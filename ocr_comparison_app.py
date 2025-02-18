@@ -17,15 +17,24 @@ import tempfile
 import pandas as pd
 import tensorflow as tf
 import keras_ocr
+import logging
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-# Set Tesseract path
-pytesseract.pytesseract.tesseract_cmd = r'Tesseract-OCR\tesseract.exe'
+# Modify the Tesseract path configuration to be more flexible
+if os.path.exists(r'Tesseract-OCR\tesseract.exe'):
+    pytesseract.pytesseract.tesseract_cmd = r'Tesseract-OCR\tesseract.exe'
+else:
+    # Try to use system installed Tesseract
+    pytesseract.pytesseract.tesseract_cmd = 'tesseract'
 
 # Suppress TF warnings
 tf.get_logger().setLevel('ERROR')
+
+# Add this near the top of your file
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def find_innermost_boundary(image):
     """Find the innermost boundary rectangle that contains the main drawing"""
@@ -95,22 +104,36 @@ def find_innermost_boundary(image):
 def convert_pdf_to_image(pdf_file):
     """Convert PDF to image"""
     try:
-        # Read PDF file
-        pdf_document = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        logger.info("Starting PDF conversion")
+        # Create a temporary file to save the PDF content
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_pdf:
+            tmp_pdf.write(pdf_file.getvalue())
+            tmp_pdf_path = tmp_pdf.name
+
+        # Open the temporary PDF file
+        pdf_document = fitz.open(tmp_pdf_path)
         
-        # Get first page
-        page = pdf_document[0]
-        
-        # Convert to image with higher resolution
-        pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
-        img_data = pix.tobytes("png")
-        
-        # Convert to numpy array
-        nparr = np.frombuffer(img_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        return img
+        try:
+            # Get first page
+            page = pdf_document[0]
+            
+            # Convert to image with higher resolution
+            pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+            img_data = pix.tobytes("png")
+            
+            # Convert to numpy array
+            nparr = np.frombuffer(img_data, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            logger.info("PDF conversion successful")
+            return img
+        finally:
+            # Clean up
+            pdf_document.close()
+            os.unlink(tmp_pdf_path)
+            
     except Exception as e:
+        logger.error(f"PDF conversion failed: {str(e)}", exc_info=True)
         st.error(f"Error converting PDF: {str(e)}")
         return None
 
@@ -421,7 +444,11 @@ def main():
     
     # Load models at startup
     with st.spinner('Loading OCR models...'):
-        easyocr_reader, keras_pipeline = load_models()
+        try:
+            easyocr_reader, keras_pipeline = load_models()
+        except Exception as e:
+            st.error(f"Failed to load OCR models: {str(e)}")
+            return
     
     # File uploader with supported file types
     uploaded_file = st.file_uploader(
@@ -435,7 +462,8 @@ def main():
             file_type = uploaded_file.name.split('.')[-1].lower()
             
             if file_type == 'pdf':
-                image = convert_pdf_to_image(uploaded_file)
+                with st.spinner('Converting PDF...'):
+                    image = convert_pdf_to_image(uploaded_file)
             else:
                 # Read image file directly
                 file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
@@ -549,6 +577,7 @@ def main():
                         
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
+            st.exception(e)  # This will show the full traceback in the app
 
 if __name__ == "__main__":
     main() 
