@@ -181,52 +181,76 @@ def load_models():
         'keras': None
     }
     
-    # Load EasyOCR with better error handling and timeout
+    # Load EasyOCR with memory-efficient settings
     try:
-        with st.spinner('Loading EasyOCR model... This may take a few minutes on first run.'):
+        with st.spinner('Loading EasyOCR model... This may take a few minutes.'):
             # First check if torch is available
             import torch
-            if not torch.cuda.is_available():
-                logger.info("CUDA not available, using CPU for EasyOCR")
+            import gc
             
-            # Configure download parameters
+            # Force garbage collection before loading model
+            gc.collect()
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            
+            # Memory-efficient configuration
             download_params = {
                 'download_enabled': True,
                 'download_enabled_kwargs': {
-                    'timeout': 60,  # Increased timeout
-                    'retry': 5      # Increased retries
-                }
+                    'timeout': 30,
+                    'retry': 3
+                },
+                'recog_network': 'standard'  # Use standard network instead of more memory-intensive ones
             }
             
-            # Initialize reader with error handling
+            # Initialize reader with minimal memory settings
             try:
                 models['easyocr'] = easyocr.Reader(
-                    ['en'], 
-                    gpu=torch.cuda.is_available(),
-                    **download_params,
-                    verbose=False
+                    ['en'],
+                    gpu=False,  # Force CPU mode for stability
+                    model_storage_directory='./models',  # Specify model storage
+                    download_enabled=True,
+                    verbose=False,
+                    quantize=True,  # Enable model quantization to reduce memory
+                    **download_params
                 )
                 logger.info("EasyOCR model loaded successfully")
+                
+                # Force garbage collection after loading
+                gc.collect()
+                torch.cuda.empty_cache() if torch.cuda.is_available() else None
+                
             except Exception as model_error:
                 logger.error(f"EasyOCR model initialization failed: {str(model_error)}")
-                st.warning("EasyOCR model failed to initialize. Trying fallback method...")
+                st.warning("EasyOCR model failed to initialize. Trying minimal configuration...")
                 
-                # Fallback to CPU-only with minimal settings
+                # Ultra-minimal fallback configuration
                 try:
+                    gc.collect()  # Clean memory before retry
                     models['easyocr'] = easyocr.Reader(
                         ['en'],
                         gpu=False,
+                        model_storage_directory='./models',
                         download_enabled=True,
-                        verbose=False
+                        verbose=False,
+                        quantize=True,
+                        recog_network='standard',
+                        batch_size=1,  # Minimum batch size
+                        paragraph=False,  # Disable paragraph detection
+                        single_line=True  # Only detect single lines
                     )
-                    logger.info("EasyOCR loaded with fallback method")
+                    logger.info("EasyOCR loaded with minimal configuration")
                 except Exception as fallback_error:
                     logger.error(f"EasyOCR fallback initialization failed: {str(fallback_error)}")
                     raise
+                
     except Exception as e:
         st.warning("EasyOCR failed to load. Some features will be disabled.")
         logger.error(f"EasyOCR loading error: {str(e)}", exc_info=True)
         models['easyocr'] = None
+        
+        # Final garbage collection
+        gc.collect()
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
 
     # Load Keras OCR if available
     if KERAS_OCR_AVAILABLE:
