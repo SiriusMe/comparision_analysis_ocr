@@ -1,8 +1,11 @@
 tesseract-ocr
 tesseract-ocr-eng
+tesseract-ocr-osd
+libtesseract-dev
+libleptonica-dev
 libgl1
 libglib2.0-0
 libsm6
 libxext6
 libxrender-dev
-libtesseract-dev
+python3-dev

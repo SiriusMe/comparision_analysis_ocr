@@ -1,0 +1,189 @@
+Index: requirements.txt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>absl-py==2.1.0\r\naltair==5.5.0\r\nastunparse==1.6.3\r\nattrs==25.1.0\r\nblinker==1.9.0\r\ncachetools==5.5.1\r\ncertifi==2025.1.31\r\ncharset-normalizer==3.4.1\r\nclick==8.1.8\r\ncolorama==0.4.6\r\ncontourpy==1.3.1\r\ncycler==0.12.1\r\neasyocr==1.7.2\r\neditdistance==0.8.1\r\nefficientnet==1.0.0\r\nessential-generators==1.0\r\nfilelock==3.17.0\r\nflatbuffers==25.2.10\r\nfonttools==4.56.0\r\nfsspec==2025.2.0\r\ngast==0.6.0\r\ngitdb==4.0.12\r\nGitPython==3.1.44\r\ngoogle-auth==2.38.0\r\ngoogle-auth-oauthlib==1.2.1\r\ngoogle-pasta==0.2.0\r\ngrpcio==1.70.0\r\nh5py==3.12.1\r\nidna==3.10\r\nimageio==2.37.0\r\nimgaug==0.4.0\r\nJinja2==3.1.5\r\njsonschema==4.23.0\r\njsonschema-specifications==2024.10.1\r\nkeras==2.15.0\r\nKeras-Applications==1.0.8\r\nkeras-ocr==0.8.7\r\nkiwisolver==1.4.8\r\nlazy_loader==0.4\r\nlibclang==18.1.1\r\nMarkdown==3.7\r\nmarkdown-it-py==3.0.0\r\nMarkupSafe==3.0.2\r\nmatplotlib==3.10.0\r\nmdurl==0.1.2\r\nml-dtypes==0.2.0\r\nmpmath==1.3.0\r\nnamex==0.0.8\r\nnarwhals==1.26.0\r\nnetworkx==3.4.2\r\nninja==1.11.1.3\r\nnumpy==1.26.4\r\noauthlib==3.2.2\r\nopencv-python==4.11.0.86\r\nopencv-python-headless==4.11.0.86\r\nopt_einsum==3.4.0\r\noptree==0.14.0\r\npackaging==24.2\r\npandas==2.2.3\r\npillow==11.1.0\r\nprotobuf==4.25.6\r\npyarrow==19.0.0\r\npyasn1==0.6.1\r\npyasn1_modules==0.4.1\r\npyclipper==1.3.0.post6\r\npydeck==0.9.1\r\nPygments==2.19.1\r\nPyMuPDF==1.25.3\r\npyparsing==3.2.1\r\npytesseract==0.3.13\r\npython-bidi==0.6.3\r\npython-dateutil==2.9.0.post0\r\npytz==2025.1\r\nPyYAML==6.0.2\r\nreferencing==0.36.2\r\nrequests==2.32.3\r\nrequests-oauthlib==2.0.0\r\nrich==13.9.4\r\nrpds-py==0.22.3\r\nrsa==4.9\r\nscikit-image==0.25.1\r\nscipy==1.15.2\r\nshapely==2.0.7\r\nsix==1.17.0\r\nsmmap==5.0.2\r\nstreamlit==1.42.0\r\nsympy==1.13.1\r\ntenacity==9.0.0\r\ntensorboard==2.15.2\r\ntensorboard-data-server==0.7.2\r\ntensorflow==2.15.0\r\ntensorflow-estimator==2.15.0\r\ntensorflow-intel==2.15.0\r\ntensorflow-io-gcs-filesystem==0.31.0\r\ntermcolor==2.5.0\r\ntifffile==2025.1.10\r\ntoml==0.10.2\r\ntorch==2.6.0\r\ntorchvision==0.21.0\r\ntornado==6.4.2\r\ntqdm==4.67.1\r\ntyping_extensions==4.12.2\r\ntzdata==2025.1\r\nurllib3==2.3.0\r\nvalidators==0.34.0\r\nwatchdog==6.0.0\r\nWerkzeug==3.1.3\r\nwrapt==1.14.1\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/requirements.txt b/requirements.txt
+--- a/requirements.txt	(revision 11d1743eb404deaa6b9a15b67029142ef7c1cf8f)
++++ b/requirements.txt	(date 1739851062365)
+@@ -1,108 +1,9 @@
+-absl-py==2.1.0
+-altair==5.5.0
+-astunparse==1.6.3
+-attrs==25.1.0
+-blinker==1.9.0
+-cachetools==5.5.1
+-certifi==2025.1.31
+-charset-normalizer==3.4.1
+-click==8.1.8
+-colorama==0.4.6
+-contourpy==1.3.1
+-cycler==0.12.1
+-easyocr==1.7.2
+-editdistance==0.8.1
+-efficientnet==1.0.0
+-essential-generators==1.0
+-filelock==3.17.0
+-flatbuffers==25.2.10
+-fonttools==4.56.0
+-fsspec==2025.2.0
+-gast==0.6.0
+-gitdb==4.0.12
+-GitPython==3.1.44
+-google-auth==2.38.0
+-google-auth-oauthlib==1.2.1
+-google-pasta==0.2.0
+-grpcio==1.70.0
+-h5py==3.12.1
+-idna==3.10
+-imageio==2.37.0
+-imgaug==0.4.0
+-Jinja2==3.1.5
+-jsonschema==4.23.0
+-jsonschema-specifications==2024.10.1
++streamlit
++easyocr
++pytesseract
++opencv-python
++matplotlib
++PyMuPDF
++tensorflow==2.15.0
+ keras==2.15.0
+-Keras-Applications==1.0.8
+ keras-ocr==0.8.7
+-kiwisolver==1.4.8
+-lazy_loader==0.4
+-libclang==18.1.1
+-Markdown==3.7
+-markdown-it-py==3.0.0
+-MarkupSafe==3.0.2
+-matplotlib==3.10.0
+-mdurl==0.1.2
+-ml-dtypes==0.2.0
+-mpmath==1.3.0
+-namex==0.0.8
+-narwhals==1.26.0
+-networkx==3.4.2
+-ninja==1.11.1.3
+-numpy==1.26.4
+-oauthlib==3.2.2
+-opencv-python==4.11.0.86
+-opencv-python-headless==4.11.0.86
+-opt_einsum==3.4.0
+-optree==0.14.0
+-packaging==24.2
+-pandas==2.2.3
+-pillow==11.1.0
+-protobuf==4.25.6
+-pyarrow==19.0.0
+-pyasn1==0.6.1
+-pyasn1_modules==0.4.1
+-pyclipper==1.3.0.post6
+-pydeck==0.9.1
+-Pygments==2.19.1
+-PyMuPDF==1.25.3
+-pyparsing==3.2.1
+-pytesseract==0.3.13
+-python-bidi==0.6.3
+-python-dateutil==2.9.0.post0
+-pytz==2025.1
+-PyYAML==6.0.2
+-referencing==0.36.2
+-requests==2.32.3
+-requests-oauthlib==2.0.0
+-rich==13.9.4
+-rpds-py==0.22.3
+-rsa==4.9
+-scikit-image==0.25.1
+-scipy==1.15.2
+-shapely==2.0.7
+-six==1.17.0
+-smmap==5.0.2
+-streamlit==1.42.0
+-sympy==1.13.1
+-tenacity==9.0.0
+-tensorboard==2.15.2
+-tensorboard-data-server==0.7.2
+-tensorflow==2.15.0
+-tensorflow-estimator==2.15.0
+-tensorflow-intel==2.15.0
+-tensorflow-io-gcs-filesystem==0.31.0
+-termcolor==2.5.0
+-tifffile==2025.1.10
+-toml==0.10.2
+-torch==2.6.0
+-torchvision==0.21.0
+-tornado==6.4.2
+-tqdm==4.67.1
+-typing_extensions==4.12.2
+-tzdata==2025.1
+-urllib3==2.3.0
+-validators==0.34.0
+-watchdog==6.0.0
+-Werkzeug==3.1.3
+-wrapt==1.14.1
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<project version=\"4\">\r\n  <component name=\"AutoImportSettings\">\r\n    <option name=\"autoReloadType\" value=\"SELECTIVE\" />\r\n  </component>\r\n  <component name=\"ChangeListManager\">\r\n    <list default=\"true\" id=\"1d143f92-3f9b-4599-af6c-d6762bb6e97d\" name=\"Changes\" comment=\"\">\r\n      <change afterPath=\"$PROJECT_DIR$/Procfile\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/setup.sh\" afterDir=\"false\" />\r\n      <change beforePath=\"$PROJECT_DIR$/requirements.txt\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/requirements.txt\" afterDir=\"false\" />\r\n    </list>\r\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\r\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\r\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\r\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\r\n  </component>\r\n  <component name=\"Git.Settings\">\r\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\r\n  </component>\r\n  <component name=\"ProjectColorInfo\">{\r\n  &quot;associatedIndex&quot;: 8\r\n}</component>\r\n  <component name=\"ProjectId\" id=\"2t9YV4Ib3AheThH0qFdZYdjO07Y\" />\r\n  <component name=\"ProjectViewState\">\r\n    <option name=\"hideEmptyMiddlePackages\" value=\"true\" />\r\n    <option name=\"showLibraryContents\" value=\"true\" />\r\n  </component>\r\n  <component name=\"PropertiesComponent\"><![CDATA[{\r\n  \"keyToString\": {\r\n    \"RunOnceActivity.ShowReadmeOnStart\": \"true\",\r\n    \"git-widget-placeholder\": \"main\",\r\n    \"last_opened_file_path\": \"D:/siri/OCR\",\r\n    \"settings.editor.selected.configurable\": \"com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable\"\r\n  }\r\n}]]></component>\r\n  <component name=\"RecentsManager\">\r\n    <key name=\"CopyFile.RECENT_KEYS\">\r\n      <recent name=\"D:\\siri\\OCR\" />\r\n    </key>\r\n    <key name=\"MoveFile.RECENT_KEYS\">\r\n      <recent name=\"D:\\siri\\OCR\" />\r\n    </key>\r\n  </component>\r\n  <component name=\"SharedIndexes\">\r\n    <attachedChunks>\r\n      <set>\r\n        <option value=\"bundled-python-sdk-884f5ed5d46b-c546a90a8094-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-242.22855.92\" />\r\n      </set>\r\n    </attachedChunks>\r\n  </component>\r\n  <component name=\"SpellCheckerSettings\" RuntimeDictionaries=\"0\" Folders=\"0\" CustomDictionaries=\"0\" DefaultDictionary=\"application-level\" UseSingleDictionary=\"true\" transferred=\"true\" />\r\n  <component name=\"TaskManager\">\r\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\r\n      <changelist id=\"1d143f92-3f9b-4599-af6c-d6762bb6e97d\" name=\"Changes\" comment=\"\" />\r\n      <created>1739765777429</created>\r\n      <option name=\"number\" value=\"Default\" />\r\n      <option name=\"presentableId\" value=\"Default\" />\r\n      <updated>1739765777429</updated>\r\n    </task>\r\n    <servers />\r\n  </component>\r\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision 11d1743eb404deaa6b9a15b67029142ef7c1cf8f)
++++ b/.idea/workspace.xml	(date 1739853613701)
+@@ -5,8 +5,7 @@
+   </component>
+   <component name="ChangeListManager">
+     <list default="true" id="1d143f92-3f9b-4599-af6c-d6762bb6e97d" name="Changes" comment="">
+-      <change afterPath="$PROJECT_DIR$/Procfile" afterDir="false" />
+-      <change afterPath="$PROJECT_DIR$/setup.sh" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+     </list>
+     <option name="SHOW_DIALOG" value="false" />
+@@ -16,7 +15,20 @@
+   </component>
+   <component name="Git.Settings">
+     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
++    <option name="UPDATE_TYPE" value="REBASE" />
+   </component>
++  <component name="GitHubPullRequestSearchHistory">{
++  &quot;lastFilter&quot;: {
++    &quot;state&quot;: &quot;OPEN&quot;,
++    &quot;assignee&quot;: &quot;SiriusMe&quot;
++  }
++}</component>
++  <component name="GithubPullRequestsUISettings">{
++  &quot;selectedUrlAndAccountId&quot;: {
++    &quot;url&quot;: &quot;https://github.com/SiriusMe/comparision_analysis_ocr.git&quot;,
++    &quot;accountId&quot;: &quot;c89b3f2d-9f8e-4206-a97d-f6cea0b820b3&quot;
++  }
++}</component>
+   <component name="ProjectColorInfo">{
+   &quot;associatedIndex&quot;: 8
+ }</component>
+@@ -25,14 +37,14 @@
+     <option name="hideEmptyMiddlePackages" value="true" />
+     <option name="showLibraryContents" value="true" />
+   </component>
+-  <component name="PropertiesComponent"><![CDATA[{
+-  "keyToString": {
+-    "RunOnceActivity.ShowReadmeOnStart": "true",
+-    "git-widget-placeholder": "main",
+-    "last_opened_file_path": "D:/siri/OCR",
+-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
++  <component name="PropertiesComponent">{
++  &quot;keyToString&quot;: {
++    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
++    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
++    &quot;last_opened_file_path&quot;: &quot;D:/siri/OCR&quot;,
++    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+   }
+-}]]></component>
++}</component>
+   <component name="RecentsManager">
+     <key name="CopyFile.RECENT_KEYS">
+       <recent name="D:\siri\OCR" />
