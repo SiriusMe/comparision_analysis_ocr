@@ -19,6 +19,8 @@ import logging
 import platform
 import gc
 import torch
+import time
+from contextlib import contextmanager
 
 # Initialize logger before imports
 logging.basicConfig(level=logging.INFO)
@@ -80,6 +82,25 @@ gc.enable()  # Enable garbage collection
 torch.set_grad_enabled(False)  # Disable gradient calculation
 if torch.cuda.is_available():
     torch.cuda.empty_cache()  # Clear CUDA cache
+
+# Add this reconnection helper
+@contextmanager
+def handle_disconnection(max_retries=3, delay=2):
+    """Context manager to handle server disconnections"""
+    retry_count = 0
+    while retry_count < max_retries:
+        try:
+            yield
+            break  # If successful, break out of the loop
+        except Exception as e:
+            retry_count += 1
+            if retry_count == max_retries:
+                logger.error(f"Failed after {max_retries} attempts: {str(e)}")
+                raise  # Re-raise the exception if all retries failed
+            else:
+                logger.warning(f"Attempt {retry_count} failed, retrying in {delay} seconds...")
+                time.sleep(delay)
+                continue
 
 def find_innermost_boundary(image):
     """Find the innermost boundary rectangle that contains the main drawing"""
@@ -637,16 +658,17 @@ def main():
     st.title("📝 OCR Methods Comparison")
     st.write("Compare text detection results from EasyOCR, Tesseract, and Keras OCR")
     
-    # Initialize session state for models if not exists
-    if 'models' not in st.session_state:
-        st.session_state.models = None
-    
-    # Load models at startup with better error handling
     try:
-        if st.session_state.models is None:
-            with st.spinner('Initializing models...'):
-                st.session_state.models = load_models()
-                
+        # Initialize session state for models if not exists
+        if 'models' not in st.session_state:
+            st.session_state.models = None
+        
+        # Load models with reconnection handling
+        with handle_disconnection():
+            if st.session_state.models is None:
+                with st.spinner('Initializing models...'):
+                    st.session_state.models = load_models()
+        
         models = st.session_state.models
         
         # Check which models are available
@@ -659,126 +681,131 @@ def main():
         st.sidebar.write("Tesseract: " + ("✅ Ready" if pytesseract.get_tesseract_version() else "❌ Not Available"))
         st.sidebar.write("Keras OCR: " + ("✅ Ready" if keras_available else "❌ Not Available"))
         
-    except Exception as e:
-        st.error("Failed to initialize models. Please refresh the page.")
-        logger.error(f"Model initialization error: {str(e)}")
-        return
-
-    # File uploader with supported file types
-    uploaded_file = st.file_uploader(
-        "Choose a file...", 
-        type=["jpg", "jpeg", "png", "pdf"]
-    )
-    
-    if uploaded_file is not None:
-        try:
-            # Convert file to image based on type
-            file_type = uploaded_file.name.split('.')[-1].lower()
-            
-            if file_type == 'pdf':
-                with st.spinner('Converting PDF...'):
-                    image = convert_pdf_to_image(uploaded_file)
-            else:
-                # Read image file directly
-                file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-                image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                st.error("Failed to load file. Please try another file.")
-                return
-            
-            # Detect drawing boundary
-            mask, boundary_rect, boundary_image = find_innermost_boundary(image)
-            
-            if mask is not None:
-                # Apply mask to image
-                masked_image = cv2.bitwise_and(image, image, mask=mask)
-            else:
-                masked_image = image
-                
-            # Create tabs based on available models
-            available_tabs = []
-            if easyocr_available:
-                available_tabs.append("🔍 EasyOCR")
-            available_tabs.append("🎯 Tesseract")
-            if keras_available:
-                available_tabs.append("🤖 Keras OCR")
-            
-            tabs = st.tabs(available_tabs)
-            
-            # Process with available models
-            tab_index = 0
-            
-            if easyocr_available:
-                with tabs[tab_index]:
-                    with st.spinner('Processing with EasyOCR...'):
-                        easyocr_results, processed_image = process_with_easyocr(masked_image, models['easyocr'])
-                        fig = draw_results(processed_image, easyocr_results, "EasyOCR", boundary_image)
-                        if fig:
-                            st.pyplot(fig)
-                        if easyocr_results:
-                            stats = calculate_statistics(easyocr_results, "EasyOCR")
-                            display_statistics(stats)
-                            display_detections(easyocr_results, "EasyOCR")
-                tab_index += 1
-            
-            # Tesseract is always available as a tab
-            with tabs[tab_index]:
-                with st.spinner('Processing with Tesseract...'):
-                    tesseract_results = process_with_tesseract(masked_image)
-                    fig = draw_results(masked_image, tesseract_results, "Tesseract", boundary_image)
-                    if fig:
-                        st.pyplot(fig)
-                    if tesseract_results:
-                        stats = calculate_statistics(tesseract_results, "Tesseract")
-                        display_statistics(stats)
-                        display_detections(tesseract_results, "Tesseract")
-            tab_index += 1
-            
-            if keras_available:
-                with tabs[tab_index]:
-                    with st.spinner('Processing with Keras OCR...'):
-                        keras_results = process_with_keras_ocr(masked_image, models['keras'])
-                        fig = draw_results(masked_image, keras_results, "Keras OCR", boundary_image)
-                        if fig:
-                            st.pyplot(fig)
-                        if keras_results:
-                            # Since Keras OCR doesn't provide confidence scores, we'll show simpler stats
-                            st.subheader("📊 Detection Statistics")
-                            st.metric("🔢 Total Detections", len(keras_results))
-                            # Display detections
-                            st.subheader("📋 All Detections")
-                            data = {
-                                "Text": [det[1] for det in keras_results],
-                                "Position": [f"({int(det[0][0][0])}, {int(det[0][0][1])})" for det in keras_results]
-                            }
-                            df = pd.DataFrame(data)
-                            df.index = range(1, len(df) + 1)
-                            st.dataframe(
-                                df.style.set_properties(**{
-                                    'background-color': '#f0f2f6',
-                                    'color': '#1f1f1f',
-                                    'border-color': '#ffffff',
-                                    'font-size': '16px',
-                                    'padding': '10px',
-                                    'text-align': 'left'
-                                }).set_table_styles([
-                                    {'selector': 'th',
-                                     'props': [('background-color', '#0e1117'),
-                                              ('color', '#ffffff'),
-                                              ('font-weight', 'bold'),
-                                              ('font-size', '16px'),
-                                              ('padding', '10px')]},
-                                    {'selector': 'tr:hover',
-                                     'props': [('background-color', '#e6e9ef')]},
-                                ]),
-                                use_container_width=True,
-                                height=400
-                            )
+        # File uploader with supported file types
+        uploaded_file = st.file_uploader(
+            "Choose a file...", 
+            type=["jpg", "jpeg", "png", "pdf"]
+        )
+        
+        if uploaded_file is not None:
+            with handle_disconnection():
+                # Process file with automatic reconnection
+                try:
+                    # Convert file to image based on type
+                    file_type = uploaded_file.name.split('.')[-1].lower()
+                    
+                    if file_type == 'pdf':
+                        with st.spinner('Converting PDF...'):
+                            image = convert_pdf_to_image(uploaded_file)
+                    else:
+                        # Read image file directly
+                        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+                        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                    
+                    if image is None:
+                        st.error("Failed to load file. Please try another file.")
+                        return
+                    
+                    # Detect drawing boundary
+                    mask, boundary_rect, boundary_image = find_innermost_boundary(image)
+                    
+                    if mask is not None:
+                        # Apply mask to image
+                        masked_image = cv2.bitwise_and(image, image, mask=mask)
+                    else:
+                        masked_image = image
+                    
+                    # Create tabs and process with available models
+                    available_tabs = []
+                    if easyocr_available:
+                        available_tabs.append("🔍 EasyOCR")
+                    available_tabs.append("🎯 Tesseract")
+                    if keras_available:
+                        available_tabs.append("🤖 Keras OCR")
+                    
+                    tabs = st.tabs(available_tabs)
+                    tab_index = 0
+                    
+                    # Process with each available model
+                    if easyocr_available:
+                        with tabs[tab_index]:
+                            with handle_disconnection():
+                                with st.spinner('Processing with EasyOCR...'):
+                                    easyocr_results, processed_image = process_with_easyocr(masked_image, models['easyocr'])
+                                    fig = draw_results(processed_image, easyocr_results, "EasyOCR", boundary_image)
+                                    if fig:
+                                        st.pyplot(fig)
+                                    if easyocr_results:
+                                        stats = calculate_statistics(easyocr_results, "EasyOCR")
+                                        display_statistics(stats)
+                                        display_detections(easyocr_results, "EasyOCR")
+                        tab_index += 1
+                    
+                    # Tesseract is always available as a tab
+                    with tabs[tab_index]:
+                        with handle_disconnection():
+                            with st.spinner('Processing with Tesseract...'):
+                                tesseract_results = process_with_tesseract(masked_image)
+                                fig = draw_results(masked_image, tesseract_results, "Tesseract", boundary_image)
+                                if fig:
+                                    st.pyplot(fig)
+                                if tesseract_results:
+                                    stats = calculate_statistics(tesseract_results, "Tesseract")
+                                    display_statistics(stats)
+                                    display_detections(tesseract_results, "Tesseract")
+                    tab_index += 1
+                    
+                    if keras_available:
+                        with tabs[tab_index]:
+                            with handle_disconnection():
+                                with st.spinner('Processing with Keras OCR...'):
+                                    keras_results = process_with_keras_ocr(masked_image, models['keras'])
+                                    fig = draw_results(masked_image, keras_results, "Keras OCR", boundary_image)
+                                    if fig:
+                                        st.pyplot(fig)
+                                    if keras_results:
+                                        # Since Keras OCR doesn't provide confidence scores, we'll show simpler stats
+                                        st.subheader("📊 Detection Statistics")
+                                        st.metric("🔢 Total Detections", len(keras_results))
+                                        # Display detections
+                                        st.subheader("📋 All Detections")
+                                        data = {
+                                            "Text": [det[1] for det in keras_results],
+                                            "Position": [f"({int(det[0][0][0])}, {int(det[0][0][1])})" for det in keras_results]
+                                        }
+                                        df = pd.DataFrame(data)
+                                        df.index = range(1, len(df) + 1)
+                                        st.dataframe(
+                                            df.style.set_properties(**{
+                                                'background-color': '#f0f2f6',
+                                                'color': '#1f1f1f',
+                                                'border-color': '#ffffff',
+                                                'font-size': '16px',
+                                                'padding': '10px',
+                                                'text-align': 'left'
+                                            }).set_table_styles([
+                                                {'selector': 'th',
+                                                 'props': [('background-color', '#0e1117'),
+                                                          ('color', '#ffffff'),
+                                                          ('font-weight', 'bold'),
+                                                          ('font-size', '16px'),
+                                                          ('padding', '10px')]},
+                                                {'selector': 'tr:hover',
+                                                 'props': [('background-color', '#e6e9ef')]},
+                                            ]),
+                                            use_container_width=True,
+                                            height=400
+                                        )
                         
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-            st.exception(e)  # This will show the full traceback in the app
+                except Exception as e:
+                    logger.error(f"Error processing file: {str(e)}")
+                    st.error("An error occurred. Retrying...")
+                    
+    except Exception as e:
+        logger.error(f"Application error: {str(e)}")
+        # Don't show error to user, just retry silently
+        time.sleep(2)
+        st.experimental_rerun()
 
 if __name__ == "__main__":
     main() 
