@@ -67,6 +67,12 @@ except Exception as e:
     """)
     logger.error(f"Tesseract configuration error: {str(e)}")
 
+# Add these imports at the top, after the existing imports
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TF logging
+import warnings
+warnings.filterwarnings('ignore')  # Suppress warnings
+
 def find_innermost_boundary(image):
     """Find the innermost boundary rectangle that contains the main drawing"""
     try:
@@ -190,7 +196,11 @@ def load_models():
             
             # Force garbage collection before loading model
             gc.collect()
-            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Suppress torch warnings
+            torch.set_warn_always(False)
             
             # Memory-efficient configuration
             download_params = {
@@ -198,8 +208,7 @@ def load_models():
                 'download_enabled_kwargs': {
                     'timeout': 30,
                     'retry': 3
-                },
-                'recog_network': 'standard'  # Use standard network instead of more memory-intensive ones
+                }
             }
             
             # Initialize reader with minimal memory settings
@@ -207,17 +216,22 @@ def load_models():
                 models['easyocr'] = easyocr.Reader(
                     ['en'],
                     gpu=False,  # Force CPU mode for stability
-                    model_storage_directory='./models',  # Specify model storage
+                    model_storage_directory=os.path.join(os.getcwd(), 'models'),  # Absolute path
                     download_enabled=True,
                     verbose=False,
                     quantize=True,  # Enable model quantization to reduce memory
+                    detector=False,  # Disable text detector to save memory
+                    recognizer=True,  # Only use text recognizer
+                    batch_size=1,    # Minimum batch size
+                    paragraph=False,  # Disable paragraph detection
                     **download_params
                 )
                 logger.info("EasyOCR model loaded successfully")
                 
                 # Force garbage collection after loading
                 gc.collect()
-                torch.cuda.empty_cache() if torch.cuda.is_available() else None
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 
             except Exception as model_error:
                 logger.error(f"EasyOCR model initialization failed: {str(model_error)}")
@@ -229,28 +243,31 @@ def load_models():
                     models['easyocr'] = easyocr.Reader(
                         ['en'],
                         gpu=False,
-                        model_storage_directory='./models',
+                        model_storage_directory=os.path.join(os.getcwd(), 'models'),
                         download_enabled=True,
                         verbose=False,
                         quantize=True,
-                        recog_network='standard',
-                        batch_size=1,  # Minimum batch size
-                        paragraph=False,  # Disable paragraph detection
-                        single_line=True  # Only detect single lines
+                        detector=False,
+                        recognizer=True,
+                        batch_size=1,
+                        paragraph=False,
+                        single_line=True
                     )
                     logger.info("EasyOCR loaded with minimal configuration")
                 except Exception as fallback_error:
                     logger.error(f"EasyOCR fallback initialization failed: {str(fallback_error)}")
-                    raise
+                    models['easyocr'] = None  # Set to None instead of raising
                 
     except Exception as e:
         st.warning("EasyOCR failed to load. Some features will be disabled.")
         logger.error(f"EasyOCR loading error: {str(e)}", exc_info=True)
         models['easyocr'] = None
-        
+    
+    finally:
         # Final garbage collection
         gc.collect()
-        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # Load Keras OCR if available
     if KERAS_OCR_AVAILABLE:
@@ -260,6 +277,7 @@ def load_models():
         except Exception as e:
             st.warning("Keras OCR failed to load. Some features will be disabled.")
             logger.error(f"Keras OCR loading error: {str(e)}")
+            models['keras'] = None
     
     return models
 
