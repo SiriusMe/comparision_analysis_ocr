@@ -18,23 +18,37 @@ import pandas as pd
 import tensorflow as tf
 import keras_ocr
 import logging
+import platform
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-# Modify the Tesseract path configuration to be more flexible
-if os.path.exists(r'Tesseract-OCR\tesseract.exe'):
-    pytesseract.pytesseract.tesseract_cmd = r'Tesseract-OCR\tesseract.exe'
-else:
-    # Try to use system installed Tesseract
-    pytesseract.pytesseract.tesseract_cmd = 'tesseract'
+# Add this near the top of your file, before the Tesseract error handling
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Tesseract error handling
+try:
+    pytesseract.get_tesseract_version()
+except Exception as e:
+    st.error("Tesseract is not properly installed or configured.")
+    logger.error(f"Tesseract configuration error: {str(e)}")
 
 # Suppress TF warnings
 tf.get_logger().setLevel('ERROR')
 
-# Add this near the top of your file
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Modify the Tesseract configuration section
+if platform.system() == 'Windows':
+    if os.path.exists(r'Tesseract-OCR\tesseract.exe'):
+        pytesseract.pytesseract.tesseract_cmd = r'Tesseract-OCR\tesseract.exe'
+    else:
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+else:
+    # For Linux/Mac systems (including Streamlit Cloud)
+    if os.path.exists('/usr/bin/tesseract'):
+        pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+    else:
+        pytesseract.pytesseract.tesseract_cmd = 'tesseract'
 
 def find_innermost_boundary(image):
     """Find the innermost boundary rectangle that contains the main drawing"""
@@ -146,8 +160,22 @@ def convert_dxf_to_image(dxf_file):
 def load_models():
     """Load all OCR models with caching"""
     try:
-        easyocr_reader = easyocr.Reader(['en'])
-        keras_pipeline = keras_ocr.pipeline.Pipeline()
+        # First try to load EasyOCR
+        st.info("Loading EasyOCR model... This may take a few minutes on first run.")
+        try:
+            easyocr_reader = easyocr.Reader(['en'], download_enabled=True, gpu=False)
+        except Exception as e:
+            st.error(f"Failed to load EasyOCR: {str(e)}")
+            return None, None
+
+        # Then load Keras OCR
+        st.info("Loading Keras OCR model...")
+        try:
+            keras_pipeline = keras_ocr.pipeline.Pipeline()
+        except Exception as e:
+            st.error(f"Failed to load Keras OCR: {str(e)}")
+            return easyocr_reader, None
+
         return easyocr_reader, keras_pipeline
     except Exception as e:
         st.error(f"Failed to load models: {str(e)}")
@@ -442,12 +470,24 @@ def main():
     st.title("📝 OCR Methods Comparison")
     st.write("Compare text detection results from EasyOCR, Tesseract, and Keras OCR")
     
-    # Load models at startup
+    # Load models at startup with better error handling
     with st.spinner('Loading OCR models...'):
         try:
+            # Add a placeholder for progress messages
+            status_placeholder = st.empty()
+            status_placeholder.info("Initializing models... This may take a few minutes on first run.")
+            
             easyocr_reader, keras_pipeline = load_models()
+            
+            if easyocr_reader is None and keras_pipeline is None:
+                st.error("Failed to load both OCR models. Please try refreshing the page.")
+                return
+                
+            status_placeholder.success("Models loaded successfully!")
+            
         except Exception as e:
             st.error(f"Failed to load OCR models: {str(e)}")
+            st.exception(e)
             return
     
     # File uploader with supported file types
