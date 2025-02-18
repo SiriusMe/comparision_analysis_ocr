@@ -15,17 +15,24 @@ import warnings
 import fitz  # PyMuPDF for PDF
 import tempfile
 import pandas as pd
-import tensorflow as tf
-import keras_ocr
 import logging
 import platform
 
-# Suppress warnings
-warnings.filterwarnings('ignore')
-
-# Add this near the top of your file, before the Tesseract error handling
+# Initialize logger before imports
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize TensorFlow and Keras OCR with error handling
+try:
+    import tensorflow as tf
+    import keras_ocr
+    KERAS_OCR_AVAILABLE = True
+    # Suppress TF warnings
+    tf.get_logger().setLevel('ERROR')
+except Exception as e:
+    KERAS_OCR_AVAILABLE = False
+    st.warning("Keras OCR is not available. The app will run with reduced functionality.")
+    logger.error(f"Failed to import Keras OCR: {str(e)}")
 
 # Tesseract error handling
 try:
@@ -33,9 +40,6 @@ try:
 except Exception as e:
     st.error("Tesseract is not properly installed or configured.")
     logger.error(f"Tesseract configuration error: {str(e)}")
-
-# Suppress TF warnings
-tf.get_logger().setLevel('ERROR')
 
 # Modify the Tesseract configuration section
 if platform.system() == 'Windows':
@@ -168,13 +172,14 @@ def load_models():
             st.error(f"Failed to load EasyOCR: {str(e)}")
             return None, None
 
-        # Then load Keras OCR
-        st.info("Loading Keras OCR model...")
-        try:
-            keras_pipeline = keras_ocr.pipeline.Pipeline()
-        except Exception as e:
-            st.error(f"Failed to load Keras OCR: {str(e)}")
-            return easyocr_reader, None
+        # Then load Keras OCR if available
+        keras_pipeline = None
+        if KERAS_OCR_AVAILABLE:
+            st.info("Loading Keras OCR model...")
+            try:
+                keras_pipeline = keras_ocr.pipeline.Pipeline()
+            except Exception as e:
+                st.error(f"Failed to load Keras OCR: {str(e)}")
 
         return easyocr_reader, keras_pipeline
     except Exception as e:
@@ -548,7 +553,11 @@ def main():
             """
             st.markdown(custom_tab_style, unsafe_allow_html=True)
             
-            tab1, tab2, tab3 = st.tabs(["🔍 EasyOCR", "🎯 Tesseract", "🤖 Keras OCR"])
+            # Modify the tabs section to handle missing Keras OCR
+            if KERAS_OCR_AVAILABLE:
+                tab1, tab2, tab3 = st.tabs(["🔍 EasyOCR", "🎯 Tesseract", "🤖 Keras OCR"])
+            else:
+                tab1, tab2 = st.tabs(["🔍 EasyOCR", "🎯 Tesseract"])
             
             # Process with EasyOCR
             with tab1:
@@ -574,46 +583,47 @@ def main():
                         display_statistics(stats)
                         display_detections(tesseract_results, "Tesseract")
             
-            # Process with Keras OCR
-            with tab3:
-                with st.spinner('Processing with Keras OCR...'):
-                    keras_results = process_with_keras_ocr(masked_image, keras_pipeline)
-                    fig = draw_results(masked_image, keras_results, "Keras OCR", boundary_image)
-                    if fig:
-                        st.pyplot(fig)
-                    if keras_results:
-                        # Since Keras OCR doesn't provide confidence scores, we'll show simpler stats
-                        st.subheader("📊 Detection Statistics")
-                        st.metric("🔢 Total Detections", len(keras_results))
-                        # Display detections
-                        st.subheader("📋 All Detections")
-                        data = {
-                            "Text": [det[1] for det in keras_results],
-                            "Position": [f"({int(det[0][0][0])}, {int(det[0][0][1])})" for det in keras_results]
-                        }
-                        df = pd.DataFrame(data)
-                        df.index = range(1, len(df) + 1)
-                        st.dataframe(
-                            df.style.set_properties(**{
-                                'background-color': '#f0f2f6',
-                                'color': '#1f1f1f',
-                                'border-color': '#ffffff',
-                                'font-size': '16px',
-                                'padding': '10px',
-                                'text-align': 'left'
-                            }).set_table_styles([
-                                {'selector': 'th',
-                                 'props': [('background-color', '#0e1117'),
-                                          ('color', '#ffffff'),
-                                          ('font-weight', 'bold'),
-                                          ('font-size', '16px'),
-                                          ('padding', '10px')]},
-                                {'selector': 'tr:hover',
-                                 'props': [('background-color', '#e6e9ef')]},
-                            ]),
-                            use_container_width=True,
-                            height=400
-                        )
+            # Process with Keras OCR if available
+            if KERAS_OCR_AVAILABLE:
+                with tab3:
+                    with st.spinner('Processing with Keras OCR...'):
+                        keras_results = process_with_keras_ocr(masked_image, keras_pipeline)
+                        fig = draw_results(masked_image, keras_results, "Keras OCR", boundary_image)
+                        if fig:
+                            st.pyplot(fig)
+                        if keras_results:
+                            # Since Keras OCR doesn't provide confidence scores, we'll show simpler stats
+                            st.subheader("📊 Detection Statistics")
+                            st.metric("🔢 Total Detections", len(keras_results))
+                            # Display detections
+                            st.subheader("📋 All Detections")
+                            data = {
+                                "Text": [det[1] for det in keras_results],
+                                "Position": [f"({int(det[0][0][0])}, {int(det[0][0][1])})" for det in keras_results]
+                            }
+                            df = pd.DataFrame(data)
+                            df.index = range(1, len(df) + 1)
+                            st.dataframe(
+                                df.style.set_properties(**{
+                                    'background-color': '#f0f2f6',
+                                    'color': '#1f1f1f',
+                                    'border-color': '#ffffff',
+                                    'font-size': '16px',
+                                    'padding': '10px',
+                                    'text-align': 'left'
+                                }).set_table_styles([
+                                    {'selector': 'th',
+                                     'props': [('background-color', '#0e1117'),
+                                              ('color', '#ffffff'),
+                                              ('font-weight', 'bold'),
+                                              ('font-size', '16px'),
+                                              ('padding', '10px')]},
+                                    {'selector': 'tr:hover',
+                                     'props': [('background-color', '#e6e9ef')]},
+                                ]),
+                                use_container_width=True,
+                                height=400
+                            )
                         
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
