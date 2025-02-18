@@ -202,15 +202,6 @@ def load_models():
             # Suppress torch warnings
             torch.set_warn_always(False)
             
-            # Memory-efficient configuration
-            download_params = {
-                'download_enabled': True,
-                'download_enabled_kwargs': {
-                    'timeout': 30,
-                    'retry': 3
-                }
-            }
-            
             # Initialize reader with minimal memory settings
             try:
                 models['easyocr'] = easyocr.Reader(
@@ -218,13 +209,7 @@ def load_models():
                     gpu=False,  # Force CPU mode for stability
                     model_storage_directory=os.path.join(os.getcwd(), 'models'),  # Absolute path
                     download_enabled=True,
-                    verbose=False,
-                    quantize=True,  # Enable model quantization to reduce memory
-                    detector=False,  # Disable text detector to save memory
-                    recognizer=True,  # Only use text recognizer
-                    batch_size=1,    # Minimum batch size
-                    paragraph=False,  # Disable paragraph detection
-                    **download_params
+                    verbose=False
                 )
                 logger.info("EasyOCR model loaded successfully")
                 
@@ -245,18 +230,12 @@ def load_models():
                         gpu=False,
                         model_storage_directory=os.path.join(os.getcwd(), 'models'),
                         download_enabled=True,
-                        verbose=False,
-                        quantize=True,
-                        detector=False,
-                        recognizer=True,
-                        batch_size=1,
-                        paragraph=False,
-                        single_line=True
+                        verbose=False
                     )
                     logger.info("EasyOCR loaded with minimal configuration")
                 except Exception as fallback_error:
                     logger.error(f"EasyOCR fallback initialization failed: {str(fallback_error)}")
-                    models['easyocr'] = None  # Set to None instead of raising
+                    models['easyocr'] = None
                 
     except Exception as e:
         st.warning("EasyOCR failed to load. Some features will be disabled.")
