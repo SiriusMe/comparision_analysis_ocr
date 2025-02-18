@@ -173,31 +173,38 @@ def convert_dxf_to_image(dxf_file):
     st.error("DXF support not available. Please install ezdxf package.")
     return None
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_models():
     """Load all OCR models with caching"""
+    models = {
+        'easyocr': None,
+        'keras': None
+    }
+    
+    # Load EasyOCR
     try:
-        # First try to load EasyOCR
-        st.info("Loading EasyOCR model... This may take a few minutes on first run.")
-        try:
-            easyocr_reader = easyocr.Reader(['en'], download_enabled=True, gpu=False)
-        except Exception as e:
-            st.error(f"Failed to load EasyOCR: {str(e)}")
-            return None, None
-
-        # Then load Keras OCR if available
-        keras_pipeline = None
-        if KERAS_OCR_AVAILABLE:
-            st.info("Loading Keras OCR model...")
-            try:
-                keras_pipeline = keras_ocr.pipeline.Pipeline()
-            except Exception as e:
-                st.error(f"Failed to load Keras OCR: {str(e)}")
-
-        return easyocr_reader, keras_pipeline
+        with st.spinner('Loading EasyOCR model... This may take a few minutes on first run.'):
+            models['easyocr'] = easyocr.Reader(['en'], 
+                                             download_enabled=True, 
+                                             gpu=False,
+                                             download_enabled_kwargs={
+                                                 'timeout': 30,
+                                                 'retry': 3
+                                             })
     except Exception as e:
-        st.error(f"Failed to load models: {str(e)}")
-        return None, None
+        st.warning("EasyOCR failed to load. Some features will be disabled.")
+        logger.error(f"EasyOCR loading error: {str(e)}")
+
+    # Load Keras OCR if available
+    if KERAS_OCR_AVAILABLE:
+        try:
+            with st.spinner('Loading Keras OCR model...'):
+                models['keras'] = keras_ocr.pipeline.Pipeline()
+        except Exception as e:
+            st.warning("Keras OCR failed to load. Some features will be disabled.")
+            logger.error(f"Keras OCR loading error: {str(e)}")
+    
+    return models
 
 def preprocess_image(image):
     """Preprocess image for better OCR results"""
@@ -488,26 +495,33 @@ def main():
     st.title("📝 OCR Methods Comparison")
     st.write("Compare text detection results from EasyOCR, Tesseract, and Keras OCR")
     
-    # Load models at startup with better error handling
-    with st.spinner('Loading OCR models...'):
-        try:
-            # Add a placeholder for progress messages
-            status_placeholder = st.empty()
-            status_placeholder.info("Initializing models... This may take a few minutes on first run.")
-            
-            easyocr_reader, keras_pipeline = load_models()
-            
-            if easyocr_reader is None and keras_pipeline is None:
-                st.error("Failed to load both OCR models. Please try refreshing the page.")
-                return
-                
-            status_placeholder.success("Models loaded successfully!")
-            
-        except Exception as e:
-            st.error(f"Failed to load OCR models: {str(e)}")
-            st.exception(e)
-            return
+    # Initialize session state for models if not exists
+    if 'models' not in st.session_state:
+        st.session_state.models = None
     
+    # Load models at startup with better error handling
+    try:
+        if st.session_state.models is None:
+            with st.spinner('Initializing models...'):
+                st.session_state.models = load_models()
+                
+        models = st.session_state.models
+        
+        # Check which models are available
+        easyocr_available = models['easyocr'] is not None
+        keras_available = models['keras'] is not None
+        
+        # Show model status
+        st.sidebar.subheader("Model Status")
+        st.sidebar.write("EasyOCR: " + ("✅ Ready" if easyocr_available else "❌ Not Available"))
+        st.sidebar.write("Tesseract: " + ("✅ Ready" if pytesseract.get_tesseract_version() else "❌ Not Available"))
+        st.sidebar.write("Keras OCR: " + ("✅ Ready" if keras_available else "❌ Not Available"))
+        
+    except Exception as e:
+        st.error("Failed to initialize models. Please refresh the page.")
+        logger.error(f"Model initialization error: {str(e)}")
+        return
+
     # File uploader with supported file types
     uploaded_file = st.file_uploader(
         "Choose a file...", 
@@ -540,52 +554,34 @@ def main():
             else:
                 masked_image = image
                 
-            # Create tabs for different methods with custom styling
-            custom_tab_style = """
-                <style>
-                .stTabs [data-baseweb="tab-list"] {
-                    gap: 20px;
-                }
-                .stTabs [data-baseweb="tab"] {
-                    padding: 10px 20px;
-                    font-size: 18px;
-                    font-weight: 500;
-                }
-                .stTabs [data-baseweb="tab-list"] button {
-                    border-radius: 5px;
-                    background-color: #f0f2f6;
-                }
-                .stTabs [data-baseweb="tab-list"] button:hover {
-                    background-color: #e6e9ef;
-                }
-                .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
-                    background-color: #0e1117;
-                    color: #ffffff;
-                }
-                </style>
-            """
-            st.markdown(custom_tab_style, unsafe_allow_html=True)
+            # Create tabs based on available models
+            available_tabs = []
+            if easyocr_available:
+                available_tabs.append("🔍 EasyOCR")
+            available_tabs.append("🎯 Tesseract")
+            if keras_available:
+                available_tabs.append("🤖 Keras OCR")
             
-            # Modify the tabs section to handle missing Keras OCR
-            if KERAS_OCR_AVAILABLE:
-                tab1, tab2, tab3 = st.tabs(["🔍 EasyOCR", "🎯 Tesseract", "🤖 Keras OCR"])
-            else:
-                tab1, tab2 = st.tabs(["🔍 EasyOCR", "🎯 Tesseract"])
+            tabs = st.tabs(available_tabs)
             
-            # Process with EasyOCR
-            with tab1:
-                with st.spinner('Processing with EasyOCR...'):
-                    easyocr_results = process_with_easyocr(masked_image, easyocr_reader)
-                    fig = draw_results(masked_image, easyocr_results, "EasyOCR", boundary_image)
-                    if fig:
-                        st.pyplot(fig)
-                    if easyocr_results:
-                        stats = calculate_statistics(easyocr_results, "EasyOCR")
-                        display_statistics(stats)
-                        display_detections(easyocr_results, "EasyOCR")
+            # Process with available models
+            tab_index = 0
             
-            # Process with Tesseract
-            with tab2:
+            if easyocr_available:
+                with tabs[tab_index]:
+                    with st.spinner('Processing with EasyOCR...'):
+                        easyocr_results = process_with_easyocr(masked_image, models['easyocr'])
+                        fig = draw_results(masked_image, easyocr_results, "EasyOCR", boundary_image)
+                        if fig:
+                            st.pyplot(fig)
+                        if easyocr_results:
+                            stats = calculate_statistics(easyocr_results, "EasyOCR")
+                            display_statistics(stats)
+                            display_detections(easyocr_results, "EasyOCR")
+                tab_index += 1
+            
+            # Tesseract is always available as a tab
+            with tabs[tab_index]:
                 with st.spinner('Processing with Tesseract...'):
                     tesseract_results = process_with_tesseract(masked_image)
                     fig = draw_results(masked_image, tesseract_results, "Tesseract", boundary_image)
@@ -595,12 +591,12 @@ def main():
                         stats = calculate_statistics(tesseract_results, "Tesseract")
                         display_statistics(stats)
                         display_detections(tesseract_results, "Tesseract")
+            tab_index += 1
             
-            # Process with Keras OCR if available
-            if KERAS_OCR_AVAILABLE:
-                with tab3:
+            if keras_available:
+                with tabs[tab_index]:
                     with st.spinner('Processing with Keras OCR...'):
-                        keras_results = process_with_keras_ocr(masked_image, keras_pipeline)
+                        keras_results = process_with_keras_ocr(masked_image, models['keras'])
                         fig = draw_results(masked_image, keras_results, "Keras OCR", boundary_image)
                         if fig:
                             st.pyplot(fig)

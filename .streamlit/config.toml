@@ -1,12 +1,21 @@
 [server]
 maxUploadSize = 200
 enableXsrfProtection = false
+maxMessageSize = 200
 
 [browser]
 gatherUsageStats = false
 
-[theme]
-base = "dark"
-
 [logger]
-level = "info" 
+level = "info"
+
+[runner]
+magicEnabled = true
+fastReruns = true
+
+[client]
+showErrorDetails = true
+toolbarMode = "minimal"
+
+[memory]
+ttl = 3600 
