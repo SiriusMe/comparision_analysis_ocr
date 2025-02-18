@@ -17,6 +17,8 @@ import tempfile
 import pandas as pd
 import logging
 import platform
+import gc
+import torch
 
 # Initialize logger before imports
 logging.basicConfig(level=logging.INFO)
@@ -72,6 +74,12 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TF logging
 import warnings
 warnings.filterwarnings('ignore')  # Suppress warnings
+
+# Memory management settings
+gc.enable()  # Enable garbage collection
+torch.set_grad_enabled(False)  # Disable gradient calculation
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()  # Clear CUDA cache
 
 def find_innermost_boundary(image):
     """Find the innermost boundary rectangle that contains the main drawing"""
@@ -284,10 +292,51 @@ def process_with_easyocr(image, reader):
         if reader is None:
             return None
             
-        # Process original orientation for horizontal text
-        all_results = reader.readtext(image)
+        # Resize image if too large
+        max_dimension = 2000  # Maximum dimension threshold
+        height, width = image.shape[:2]
+        if max(height, width) > max_dimension:
+            scale = max_dimension / max(height, width)
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+            logger.info(f"Resized image from {width}x{height} to {new_width}x{new_height}")
         
-        # Filter for confidence >= 0.7 (70%) and horizontal text
+        # Convert to grayscale to reduce memory usage
+        if len(image.shape) == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Split image into chunks if it's large
+        chunk_size = 1000  # Size of each chunk
+        height, width = image.shape[:2]
+        
+        all_results = []
+        
+        # Process image in chunks if it's large
+        if max(height, width) > chunk_size:
+            for y in range(0, height, chunk_size):
+                for x in range(0, width, chunk_size):
+                    # Extract chunk
+                    chunk = image[y:min(y+chunk_size, height), x:min(x+chunk_size, width)]
+                    
+                    # Process chunk with progress indicator
+                    with st.spinner(f'Processing region {x}:{x+chunk_size}, {y}:{y+chunk_size}...'):
+                        chunk_results = reader.readtext(chunk)
+                        
+                        # Adjust coordinates to original image space
+                        for box, text, conf in chunk_results:
+                            adjusted_box = [[p[0] + x, p[1] + y] for p in box]
+                            all_results.append([adjusted_box, text, conf])
+                    
+                    # Force garbage collection after each chunk
+                    import gc
+                    gc.collect()
+        else:
+            # Process small image directly
+            with st.spinner('Processing image...'):
+                all_results = reader.readtext(image)
+        
+        # Filter for confidence >= 0.6 (60%) and horizontal text
         horizontal_results = []
         for box, text, conf in all_results:
             if conf >= 0.6:  # Check confidence threshold
@@ -300,9 +349,16 @@ def process_with_easyocr(image, reader):
                 # Only include horizontal text (width > height)
                 if height <= width * 1.5:
                     horizontal_results.append([box, text, conf])
+                    
+            # Update progress
+            if len(horizontal_results) % 10 == 0:
+                st.write(f"Found {len(horizontal_results)} text regions...")
         
+        logger.info(f"Total text regions found: {len(horizontal_results)}")
         return horizontal_results
+        
     except Exception as e:
+        logger.error(f"Error in EasyOCR processing: {str(e)}", exc_info=True)
         st.error(f"Error in EasyOCR processing: {str(e)}")
         return None
 
