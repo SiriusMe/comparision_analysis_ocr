@@ -181,19 +181,52 @@ def load_models():
         'keras': None
     }
     
-    # Load EasyOCR
+    # Load EasyOCR with better error handling and timeout
     try:
         with st.spinner('Loading EasyOCR model... This may take a few minutes on first run.'):
-            models['easyocr'] = easyocr.Reader(['en'], 
-                                             download_enabled=True, 
-                                             gpu=False,
-                                             download_enabled_kwargs={
-                                                 'timeout': 30,
-                                                 'retry': 3
-                                             })
+            # First check if torch is available
+            import torch
+            if not torch.cuda.is_available():
+                logger.info("CUDA not available, using CPU for EasyOCR")
+            
+            # Configure download parameters
+            download_params = {
+                'download_enabled': True,
+                'download_enabled_kwargs': {
+                    'timeout': 60,  # Increased timeout
+                    'retry': 5      # Increased retries
+                }
+            }
+            
+            # Initialize reader with error handling
+            try:
+                models['easyocr'] = easyocr.Reader(
+                    ['en'], 
+                    gpu=torch.cuda.is_available(),
+                    **download_params,
+                    verbose=False
+                )
+                logger.info("EasyOCR model loaded successfully")
+            except Exception as model_error:
+                logger.error(f"EasyOCR model initialization failed: {str(model_error)}")
+                st.warning("EasyOCR model failed to initialize. Trying fallback method...")
+                
+                # Fallback to CPU-only with minimal settings
+                try:
+                    models['easyocr'] = easyocr.Reader(
+                        ['en'],
+                        gpu=False,
+                        download_enabled=True,
+                        verbose=False
+                    )
+                    logger.info("EasyOCR loaded with fallback method")
+                except Exception as fallback_error:
+                    logger.error(f"EasyOCR fallback initialization failed: {str(fallback_error)}")
+                    raise
     except Exception as e:
         st.warning("EasyOCR failed to load. Some features will be disabled.")
-        logger.error(f"EasyOCR loading error: {str(e)}")
+        logger.error(f"EasyOCR loading error: {str(e)}", exc_info=True)
+        models['easyocr'] = None
 
     # Load Keras OCR if available
     if KERAS_OCR_AVAILABLE:
