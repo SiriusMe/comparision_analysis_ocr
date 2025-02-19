@@ -18,4 +18,5 @@ showErrorDetails = true
 toolbarMode = "minimal"
 
 [memory]
-ttl = 3600 
+ttl = 3600
+memory.showWarning = false 

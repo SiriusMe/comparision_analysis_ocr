@@ -21,6 +21,7 @@ import gc
 import torch
 import time
 from contextlib import contextmanager
+import tensorflow as tf
 
 # Initialize logger before imports
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 # Initialize TensorFlow and Keras OCR with error handling
 try:
-    import tensorflow as tf
     import keras_ocr
     KERAS_OCR_AVAILABLE = True
     # Suppress TF warnings
